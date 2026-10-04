@@ -150,6 +150,7 @@ async function scan() {
     $("#results").innerHTML = ""; showErrors({});
     $("#reviewPanel").classList.add("hidden");
     $("#backupsBtn").classList.remove("hidden");
+    state.extraCovers = [];
     $("#chatPrompt").value = ""; $("#chatReply").value = ""; $("#chatResult").innerHTML = "";
     $("#chatCopyBtn").disabled = true; $("#chatCopied").textContent = "";
     $("#backupList").classList.add("hidden");
@@ -330,6 +331,7 @@ const CHAT_FORMAT = `{
     }
   ],
   "confidence": "high, medium or low",
+  "cover_image_url": "Direct link to a front cover image file (.jpg/.png), or null",
   "notes": "Anything uncertain, and which edition you matched",
   "sources": ["URLs you used"]
 }`;
@@ -370,6 +372,7 @@ How to find it:
 - Make sure the track count and track lengths match my rip (within a few seconds). If there are several editions, pick the one that matches.
 - Write titles and names exactly as printed, in the original script (kanji/kana). Put a Hepburn romanization in the *_romanized fields when the original isn't in Latin script.
 - For compilations, give each song's own artist.
+- Find the front cover art: give a direct link to the image file itself (ideally 500px or larger), not to a web page. Good places: the Amazon.co.jp product image (m.media-amazon.com/images/I/...jpg), Cover Art Archive, Discogs, Tower Records or HMV Japan. It must be this exact edition's cover. Use null if you can't find one.
 - Don't guess. If you can't confirm something, use null and explain it in "notes".
 
 Reply with ONLY one JSON code block in exactly this format (the values below describe what goes in each field):
@@ -420,7 +423,8 @@ function parseChatReply(text) {
     artist: albumArtist, artist_romanized: r.artist_romanized || "", album_artist: albumArtist,
     date: r.release_date || "", country: "", label: r.label || "", catalog: r.catalog_number || "",
     barcode: String(r.barcode || "").replace(/\D/g, ""), format: r.media || "",
-    track_count: discs.reduce((n, d) => n + d.tracks.length, 0), cover_url: "",
+    track_count: discs.reduce((n, d) => n + d.tracks.length, 0),
+    cover_url: /^https?:\/\//i.test(r.cover_image_url || "") ? r.cover_image_url.trim() : "",
     discs, confidence: r.confidence, notes: r.notes || "", sources: r.sources || [],
   };
 }
@@ -481,21 +485,56 @@ function loadRelease(rel) {
   panel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function renderCovers() {
+state.extraCovers = [];  // images added in the Review panel: {key, label, cover, img}
+
+function renderCovers(selectKey) {
   const rel = state.release;
-  const choices = [{ key: "keep", label: "Keep existing", cover: null }];
+  const withArt = state.scan?.files.find(f => f.has_cover);
+  const keep = withArt
+    ? { key: "keep", label: "Current (keep)", cover: null,
+        img: `/api/embedded-cover?path=${encodeURIComponent(withArt.path)}&t=${Date.now()}` }
+    : { key: "keep", label: "No art (keep)", cover: null };
+  const choices = [keep];
   if (rel.cover_url) choices.push({ key: "rel", label: rel.source, cover: { url: rel.cover_url },
     img: `/api/cover-proxy?url=${encodeURIComponent(rel.cover_url)}` });
   state.photos.forEach(p => choices.push({ key: p.id, label: p.label, cover: { upload_id: p.id }, img: p.url }));
-  const def = choices.find(c => c.key === "rel") || choices.find(c => c.label === "Front cover") || choices[0];
+  choices.push(...state.extraCovers);
+  // If the files already have art, keep it unless the user picks something else.
+  const def = choices.find(c => c.key === selectKey) || (withArt ? keep : null) ||
+    choices.find(c => c.key === "rel") || choices.find(c => c.label === "Front cover") || choices[0];
   state.cover = def.cover;
   $("#coverChoices").innerHTML = choices.map((c, i) => `<div class="cover-choice ${c === def ? "sel" : ""}" data-i="${i}">
-      ${c.img ? `<img src="${c.img}" alt="">` : `<div class="none">—</div>`}${esc(c.label)}</div>`).join("");
+      ${c.img ? `<img src="${c.img}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'none',textContent:'can’t load'}))">`
+        : `<div class="none">—</div>`}${esc(c.label)}</div>`).join("");
   $$(".cover-choice").forEach(el => el.onclick = () => {
     $$(".cover-choice").forEach(x => x.classList.toggle("sel", x === el));
     state.cover = choices[+el.dataset.i].cover;
   });
 }
+
+$("#coverFileInput").onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  const fd = new FormData();
+  fd.append("images", f);
+  try {
+    const d = await api("/api/upload", { method: "POST", body: fd });
+    const u = d.uploads[0];
+    state.extraCovers.push({ key: u.id, label: "Your image", cover: { upload_id: u.id }, img: `/api/upload/${u.id}` });
+    renderCovers(u.id);
+  } catch (err) { showErrors({ cover: err.message }); }
+};
+
+$("#coverUrlBtn").onclick = () => {
+  const url = $("#coverUrl").value.trim();
+  if (!/^https?:\/\//i.test(url)) return showErrors({ cover: "Paste a full image link starting with http." });
+  const key = "url:" + url;
+  if (!state.extraCovers.some(c => c.key === key))
+    state.extraCovers.push({ key, label: "From link", cover: { url }, img: `/api/cover-proxy?url=${encodeURIComponent(url)}` });
+  $("#coverUrl").value = "";
+  renderCovers(key);
+};
 
 $("#mode").onchange = () => renderMap();
 $("#sideTitle").onchange = () => renderMap();

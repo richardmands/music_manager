@@ -177,3 +177,7 @@ button.save { min-width: 140px; letter-spacing: .04em; }
 
 .chat-box { width: 100%; min-height: 140px; font: 12px/1.45 Consolas, "MS Gothic", monospace; resize: vertical; margin: 6px 0; }
 #chatResult .notes { font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
+.cover-add { font-size: 12px; margin-bottom: 6px; }
+.cover-add .row { margin: 4px 0; flex-wrap: nowrap; }
+.cover-add input { flex: 1; min-width: 0; font-size: 12px; padding: 4px 6px; }
+.cover-add button { padding: 4px 10px; font-size: 12px; }

@@ -24,7 +24,7 @@ SUBMIT_TOOL = {
         "additionalProperties": False,
         "required": ["album_title", "album_title_romanized", "artist", "artist_romanized",
                      "release_date", "label", "catalog_number", "barcode", "media",
-                     "discs", "confidence", "notes", "sources"],
+                     "discs", "cover_image_url", "confidence", "notes", "sources"],
         "properties": {
             "album_title": {"type": "string", "description": "Exactly as printed, original script"},
             "album_title_romanized": _nullable_str,
@@ -65,6 +65,8 @@ SUBMIT_TOOL = {
                     },
                 },
             },
+            "cover_image_url": {**_nullable_str,
+                                "description": "Direct link to a front cover image file found online"},
             "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
             "notes": {"type": "string", "description": "Anything uncertain or unreadable"},
             "sources": {"type": "array", "items": {"type": "string"},
@@ -93,7 +95,10 @@ WEB_ADDENDUM = """
 You also have web search. Use it to confirm the release and complete or correct the track list \
 (VGMdb, MusicBrainz, Discogs, the label's or artist's official site, Amazon.co.jp, CDJournal, \
 Tower Records Japan and HMV Japan are good sources). Searching the catalog number on its own \
-is usually the fastest way in. List the URLs you relied on in `sources`."""
+is usually the fastest way in. List the URLs you relied on in `sources`.
+Also find this exact edition's front cover online and put a direct link to the image file
+(not a web page) in `cover_image_url`, e.g. the Amazon.co.jp product image, Cover Art Archive,
+Discogs, Tower Records or HMV Japan. Use null if you can't find one."""
 
 
 def prepare_image(data):
@@ -172,7 +177,8 @@ def to_release(r):
         "album_artist": r["artist"], "date": r.get("release_date") or "", "country": "",
         "label": r.get("label") or "", "catalog": r.get("catalog_number") or "",
         "barcode": r.get("barcode") or "", "format": r.get("media", ""),
-        "track_count": sum(len(d["tracks"]) for d in discs), "cover_url": "",
+        "track_count": sum(len(d["tracks"]) for d in discs),
+        "cover_url": r.get("cover_image_url") or "",
         "discs": discs, "confidence": r.get("confidence"), "notes": r.get("notes", ""),
         "sources": r.get("sources", []),
     }

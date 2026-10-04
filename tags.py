@@ -140,6 +140,20 @@ def fields_from_snapshot(snap):
     return out
 
 
+def embedded_cover(path):
+    """(bytes, mime) of the embedded front cover (or first picture), else None."""
+    if path.lower().endswith(".flac"):
+        pics = FLAC(path).pictures
+        pic = next((p for p in pics if p.type == 3), pics[0] if pics else None)
+        return (pic.data, pic.mime or "image/jpeg") if pic else None
+    try:
+        apics = ID3(path).getall("APIC")
+    except ID3NoHeaderError:
+        return None
+    pic = next((p for p in apics if p.type == 3), apics[0] if apics else None)
+    return (pic.data, pic.mime or "image/jpeg") if pic else None
+
+
 def current_fields(path):
     return fields_from_snapshot(snapshot(path))
 

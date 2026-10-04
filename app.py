@@ -211,6 +211,18 @@ def get_upload(uid):
     return send_file(io.BytesIO(u["data"]), download_name=u["name"])
 
 
+@app.get("/api/embedded-cover")
+def embedded_cover():
+    """The front cover already embedded in a music file (read-only)."""
+    path = request.args.get("path", "")
+    if not os.path.isfile(path) or os.path.splitext(path)[1].lower() not in tags.AUDIO_EXT:
+        return err("Not a music file", 404)
+    art = tags.embedded_cover(path)
+    if not art:
+        return err("No embedded cover", 404)
+    return send_file(io.BytesIO(art[0]), mimetype=art[1])
+
+
 @app.get("/api/cover-proxy")
 def cover_proxy():
     """Fetch remote cover art server-side (some sites block hotlinking)."""
