@@ -534,19 +534,49 @@ function renderCovers(selectKey) {
   });
 }
 
-$("#coverFileInput").onchange = async e => {
-  const f = e.target.files[0];
-  e.target.value = "";
-  if (!f) return;
+async function addCoverImage(f, label = "Your image") {
   const fd = new FormData();
-  fd.append("images", f);
+  fd.append("images", f, f.name || "pasted.png");
   try {
     const d = await api("/api/upload", { method: "POST", body: fd });
     const u = d.uploads[0];
-    state.extraCovers.push({ key: u.id, label: "Your image", cover: { upload_id: u.id }, img: `/api/upload/${u.id}` });
+    state.extraCovers.push({ key: u.id, label, cover: { upload_id: u.id }, img: `/api/upload/${u.id}` });
     renderCovers(u.id);
   } catch (err) { showErrors({ cover: err.message }); }
+}
+
+$("#coverFileInput").onchange = e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (f) addCoverImage(f);
 };
+
+// Drag an image onto the cover area.
+const coverArea = $(".covers");
+coverArea.ondragover = e => { e.preventDefault(); coverArea.classList.add("over"); };
+coverArea.ondragleave = () => coverArea.classList.remove("over");
+coverArea.ondrop = e => {
+  e.preventDefault();
+  coverArea.classList.remove("over");
+  const f = [...e.dataTransfer.files].find(x => x.type.startsWith("image/"));
+  if (f) addCoverImage(f);
+};
+
+// Ctrl+V an image: it becomes a cover option while reviewing an album,
+// otherwise a photo on the "From photos" tab.
+document.addEventListener("paste", e => {
+  const imgs = [...(e.clipboardData?.items || [])]
+    .filter(i => i.kind === "file" && i.type.startsWith("image/")).map(i => i.getAsFile());
+  if (!imgs.length) return;
+  e.preventDefault();
+  if (!$("#reviewPanel").classList.contains("hidden")) {
+    addCoverImage(imgs[0], "Pasted image");
+    $(".covers").scrollIntoView({ behavior: "smooth", block: "center" });
+  } else {
+    $('[data-tab="photoTab"]').click();
+    addPhotos(imgs);
+  }
+});
 
 $("#coverUrlBtn").onclick = () => {
   const url = $("#coverUrl").value.trim();

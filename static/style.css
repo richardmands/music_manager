@@ -182,3 +182,4 @@ button.save { min-width: 140px; letter-spacing: .04em; }
 .cover-add input { flex: 1; min-width: 0; font-size: 12px; padding: 4px 6px; }
 .cover-add button { padding: 4px 10px; font-size: 12px; }
 .disc-input { width: 3.5em; text-align: center; }
+.covers.over { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 6px; }
