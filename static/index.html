@@ -28,8 +28,11 @@
       <button id="browseBtn" class="secondary">Browse…</button>
       <button id="scanBtn">Load</button>
     </div>
-    <div id="browser" class="browser hidden"></div>
-    <div id="fileInfo" class="muted"></div>
+    <div class="row">
+      <div id="fileInfo" class="muted" style="flex:1"></div>
+      <button id="backupsBtn" class="secondary hidden">Undo / backups</button>
+    </div>
+    <div id="backupList" class="backup-list hidden"></div>
     <div class="table-wrap"><table id="fileTable" class="hidden">
       <thead><tr><th>File</th><th>Disc</th><th>#</th><th>Side</th><th>Length</th><th>Current title</th><th>Art</th></tr></thead>
       <tbody></tbody>
@@ -127,11 +130,21 @@
     </table></div>
 
     <div class="row end">
-      <button id="writeBtn" class="primary">Write tags to files</button>
+      <span class="muted">Nothing is written until you review the changes and press SAVE.</span>
+      <button id="writeBtn" class="primary">Review changes…</button>
     </div>
-    <div id="writeResult"></div>
   </section>
 </main>
+
+<dialog id="reviewDialog">
+  <h2 id="reviewTitle">Review changes</h2>
+  <div id="reviewBody"></div>
+  <div id="saveResult"></div>
+  <div class="row end dialog-buttons">
+    <button id="cancelBtn" class="secondary">Cancel</button>
+    <button id="saveBtn" class="primary save">SAVE</button>
+  </div>
+</dialog>
 
 <script src="/static/app.js"></script>
 </body>

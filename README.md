@@ -18,9 +18,36 @@ MediaMonkey pick up the result.
      them, including Japanese text, catalog number and barcode, and can also
      search the web to confirm and complete the track list. What it reads is
      then used to search the databases too, and you can use either result.
-3. **Review and write.** Edit any field, choose cover art (from the database
-   or one of your photos), and write. The old tags are backed up to
-   `backups/` first.
+3. **Review and SAVE.** Edit any field and choose cover art (from the
+   database or one of your photos). Then see below.
+
+### Nothing is ever saved automatically
+
+Your files are only changed when you press **SAVE**:
+
+1. **Review changes…** shows, for every file, each field's old and new value,
+   whether the cover art changes, and any `cover.jpg` / `.cue` files that would
+   be created or replaced. At this point nothing has been written.
+2. **SAVE** in that dialog writes exactly what you reviewed. If any file was
+   changed by another program after you reviewed it, nothing is saved.
+
+When you press SAVE:
+
+- The current tags *and embedded cover art* of every affected file are backed
+  up to `backups/` first.
+- Each file is changed as a temporary copy. The copy's audio data is checked
+  byte-for-byte against the original, and only then does it replace the
+  original. If the check fails, the original is left untouched.
+- An existing `cover.jpg` or `.cue` that gets replaced is kept as `.bak`.
+
+**Undo / backups** (next to the folder's file list) lists every save made to
+that folder. You can review and SAVE an undo the same way, and undo puts the
+tags and art back exactly as they were.
+
+### Choosing a folder
+
+**Browse…** opens the normal Windows folder picker. It can sometimes appear
+behind the browser window. You can also paste a folder path and press Load.
 
 ### Vinyl (one file per side)
 

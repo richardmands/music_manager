@@ -64,29 +64,11 @@ function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch { } }
 
 // ------------------------------------------------------------- 1. folder
 
-$("#browseBtn").onclick = () => openBrowser($("#folderPath").value || state.config.music_root);
-
-async function openBrowser(path) {
-  const box = $("#browser");
-  try {
-    const d = await api(`/api/browse?path=${encodeURIComponent(path)}`);
-    box.classList.remove("hidden");
-    box.innerHTML = `<div class="crumb">
-        ${d.parent ? `<button class="secondary" data-go="${esc(d.parent)}">↑ Up</button>` : ""}
-        <span title="${esc(d.path)}">${esc(d.path)}</span>
-        ${d.has_audio ? `<button data-pick="${esc(d.path)}">Use this folder</button>` : ""}
-        <button class="secondary" data-close>✕</button>
-      </div>` +
-      d.dirs.map(n => `<div class="dir" data-go="${esc(d.path + "\\" + n)}">📁 ${esc(n)}</div>`).join("");
-    box.onclick = e => {
-      const t = e.target.closest("[data-go],[data-pick],[data-close]");
-      if (!t) return;
-      if (t.dataset.go) openBrowser(t.dataset.go);
-      else if (t.dataset.pick) { $("#folderPath").value = t.dataset.pick; box.classList.add("hidden"); scan(); }
-      else box.classList.add("hidden");
-    };
-  } catch (e) { showErrors({ browse: e.message }); }
-}
+$("#browseBtn").onclick = () => busy($("#browseBtn"), async () => {
+  // Opens the standard Windows folder picker (it may appear behind the browser).
+  const d = await api("/api/pick-folder", { body: { start: $("#folderPath").value.trim() } });
+  if (d.path) { $("#folderPath").value = d.path; await scan(); }
+});
 
 $("#scanBtn").onclick = () => scan();
 $("#folderPath").onkeydown = e => { if (e.key === "Enter") scan(); };
@@ -110,6 +92,8 @@ async function scan() {
     $("#tocBtn").disabled = d.looks_like_vinyl;
     $("#results").innerHTML = ""; showErrors({});
     $("#reviewPanel").classList.add("hidden");
+    $("#backupsBtn").classList.remove("hidden");
+    $("#backupList").classList.add("hidden");
   });
 }
 
@@ -294,7 +278,6 @@ function loadRelease(rel) {
 
   renderCovers();
   renderMap();
-  $("#writeResult").innerHTML = "";
   panel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -491,26 +474,97 @@ function buildWritePlan() {
   });
 }
 
+// Saving is always two steps: "Review changes" asks the server what would
+// change (it writes nothing), then only the SAVE button in the review dialog
+// writes, using exactly the reviewed change set.
+
+const FIELD_LABELS = {
+  title: "Title", artist: "Artist", album: "Album", albumartist: "Album artist", date: "Date",
+  genre: "Genre", label: "Label", catalognumber: "Catalog no.", barcode: "Barcode",
+  tracknumber: "Track", tracktotal: "Total tracks", discnumber: "Disc", disctotal: "Total discs",
+  media: "Media", vinyl_side: "Vinyl side", comment: "Comment", musicbrainz_albumid: "MusicBrainz ID",
+};
+
 $("#writeBtn").onclick = () => {
   const files = buildWritePlan();
   if (!files.length) return;
-  if (!confirm(`Write tags to ${files.length} file(s)? A backup of the current tags is saved first.`)) return;
   busy($("#writeBtn"), async () => {
+    const d = await api("/api/preview", { body: {
+      path: state.scan.path, files, cover: state.cover, save_cover_file: $("#saveCoverFile").checked,
+    } });
+    openReview(d, "Review changes");
+  });
+};
+
+$("#backupsBtn").onclick = () => busy($("#backupsBtn"), async () => {
+  if (!state.scan) return;
+  const d = await api(`/api/backups?path=${encodeURIComponent(state.scan.path)}`);
+  const box = $("#backupList");
+  box.classList.remove("hidden");
+  if (!d.backups.length) { box.innerHTML = `<div class="muted">No saves have been made to this folder yet.</div>`; return; }
+  box.innerHTML = `<div class="muted">Each save backs up the tags it replaced. Pick one to see what undoing it would change:</div>` +
+    d.backups.map(b => `<div class="backup-row">
+      <span>${esc(new Date(b.created * 1000).toLocaleString())} · ${esc(b.reason)} · ${b.count} file(s)</span>
+      <button class="secondary" data-b="${esc(b.file)}">Review undo…</button></div>`).join("");
+  $$("[data-b]", box).forEach(btn => btn.onclick = () => busy(btn, async () => {
+    const r = await api("/api/restore-preview", { body: { path: state.scan.path, backup: btn.dataset.b } });
+    openReview(r, `Undo to ${new Date(r.created * 1000).toLocaleString()}`);
+  }));
+});
+
+function diffCell(v, cls) {
+  if (v === "" || v == null) return `<span class="empty">(empty)</span>`;
+  return `<span class="${cls}">${esc(v).replace(/\n/g, "<br>")}</span>`;
+}
+
+function openReview(d, heading) {
+  const changed = d.files.filter(f => f.changes.length || f.cover);
+  const unchanged = d.files.length - changed.length;
+  const nothing = !changed.length && !d.side_files.length;
+  const coverWord = { add: "Add cover art", replace: "Replace embedded cover art", restore: "Put back the original cover art" };
+
+  $("#reviewTitle").textContent = heading;
+  $("#reviewBody").innerHTML = `
+    <p class="review-lead">Nothing has been saved yet. Check the changes below, then press <b>SAVE</b>.</p>
+    <p>${changed.length} file(s) will change${unchanged ? `, ${unchanged} already match` : ""}.
+      ${d.missing?.length ? `<br><span class="muted">Not in this folder any more (skipped): ${d.missing.map(esc).join(", ")}</span>` : ""}</p>
+    ${d.has_cover ? `<div class="review-cover"><img src="/api/plan/${d.token}/cover" alt=""><span>New cover art</span></div>` : ""}
+    ${d.side_files.length ? `<p>Other files: ${d.side_files.map(f =>
+      `${f.action === "replace" ? "<b>replace</b>" : "create"} ${esc(f.name)}`).join(", ")}
+      ${d.side_files.some(f => f.action === "replace") ? `<span class="muted">(the old one is kept as .bak)</span>` : ""}</p>` : ""}
+    ${changed.map(f => `<div class="review-file">
+      <div class="review-name">${esc(f.name)}</div>
+      <table class="diff">${f.changes.map(c => `<tr><th>${esc(FIELD_LABELS[c.field] || c.field)}</th>
+        <td>${diffCell(c.old, "old")}</td><td class="arrow">→</td><td>${diffCell(c.new, "new")}</td></tr>`).join("")}
+        ${f.cover ? `<tr><th>Cover</th><td colspan="3">${coverWord[f.cover]}</td></tr>` : ""}</table>
+    </div>`).join("")}`;
+  $("#saveBtn").disabled = nothing;
+  $("#saveBtn").textContent = nothing ? "Nothing to save" : `SAVE ${changed.length || ""} file(s)`.replace("  ", " ");
+  $("#saveResult").innerHTML = "";
+  $("#cancelBtn").textContent = "Cancel";
+  $("#saveBtn").classList.remove("hidden");
+  $("#saveBtn").onclick = () => busy($("#saveBtn"), async () => {
     try {
-      const d = await api("/api/write", { body: {
-        path: state.scan.path, files, cover: state.cover, save_cover_file: $("#saveCoverFile").checked,
-      } });
-      $("#writeResult").innerHTML = `<div class="ok-box">Wrote ${d.written} file(s).` +
-        (d.cues.length ? ` Created ${d.cues.length} .cue sheet(s).` : "") +
-        (d.cover_file ? ` Saved ${esc(d.cover_file)}.` : "") +
-        `<br><span class="muted">Backup of old tags: ${esc(d.backup)}. In MediaMonkey, use “Rescan” on the folder to pick up the changes.</span></div>`;
+      const r = await api("/api/save", { body: { token: d.token } });
+      $("#saveBtn").classList.add("hidden");
+      $("#cancelBtn").textContent = "Close";
+      $("#saveResult").innerHTML = (r.failed.length
+        ? `<div class="err-box">Problems (those files were left as they were):<br>${r.failed.map(esc).join("<br>")}</div>` : "") +
+        `<div class="ok-box">Saved ${r.saved.length} file(s)${r.side_files.length ? ` and ${r.side_files.map(esc).join(", ")}` : ""}.
+         <br><span class="muted">The previous tags were backed up and can be put back with “Undo / backups”.
+         In MediaMonkey, rescan the folder to pick up the changes.</span></div>`;
       const fresh = await api("/api/scan", { body: { path: state.scan.path } });
       state.scan = { ...state.scan, files: fresh.files };
       renderFileTable(fresh.files);
+      $("#backupList").classList.add("hidden");
     } catch (e) {
-      $("#writeResult").innerHTML = `<div class="err-box">${esc(e.message)}</div>`;
+      $("#saveResult").innerHTML = `<div class="err-box">${esc(e.message)}</div>`;
+      $("#saveBtn").disabled = true;
     }
   });
-};
+  $("#reviewDialog").showModal();
+}
+
+$("#cancelBtn").onclick = () => $("#reviewDialog").close();
 
 init();

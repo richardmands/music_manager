@@ -96,12 +96,6 @@ td.file { color: var(--muted); max-width: 220px; overflow: hidden; text-overflow
 .len-bad { color: var(--bad); font-weight: 600; }
 .len-ok { color: var(--ok); }
 
-.browser { border: 1px solid var(--border); border-radius: 8px; max-height: 280px; overflow: auto; margin: 8px 0; }
-.browser .crumb { padding: 6px 10px; background: var(--soft); font-size: 12px; display: flex; gap: 8px; align-items: center; position: sticky; top: 0; }
-.browser .crumb span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.browser div.dir { padding: 5px 10px; cursor: pointer; }
-.browser div.dir:hover { background: var(--sel); }
-
 .drop { border: 2px dashed var(--border); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted); }
 .drop.over { border-color: var(--accent); background: var(--sel); }
 .link { display: inline; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: inherit; }
@@ -141,3 +135,28 @@ td.file { color: var(--muted); max-width: 220px; overflow: hidden; text-overflow
 .side-tracks { width: 100%; min-height: 80px; font-size: 12px; font-family: inherit; resize: vertical; }
 .ok-box { color: var(--ok); margin-top: 8px; font-size: 13px; }
 .err-box { color: var(--bad); margin-top: 8px; font-size: 13px; }
+
+.backup-list { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.backup-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; flex-wrap: wrap; }
+
+dialog {
+  width: min(900px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 20px 14px; background: var(--panel); color: var(--text);
+  display: none; flex-direction: column;
+}
+dialog[open] { display: flex; }
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+#reviewBody { overflow: auto; flex: 1; min-height: 0; }
+.review-lead { background: var(--warn-bg); color: var(--warn); padding: 8px 12px; border-radius: 6px; margin-top: 0; }
+.review-file { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.review-name { font-weight: 600; margin-bottom: 4px; word-break: break-all; }
+.review-cover { display: flex; gap: 10px; align-items: center; margin: 8px 0; color: var(--muted); font-size: 13px; }
+.review-cover img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+table.diff { margin: 0; }
+table.diff th { width: 120px; white-space: nowrap; }
+table.diff td.arrow { width: 1%; color: var(--muted); }
+table.diff .old { color: var(--bad); text-decoration: line-through; }
+table.diff .new { color: var(--ok); font-weight: 600; }
+table.diff .empty { color: var(--muted); font-style: italic; }
+.dialog-buttons { border-top: 1px solid var(--border); padding-top: 12px; margin-bottom: 0; }
+button.save { min-width: 140px; letter-spacing: .04em; }

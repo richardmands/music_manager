@@ -5,6 +5,9 @@ Run:  python app.py   then open http://127.0.0.1:5173
 import io
 import json
 import os
+import subprocess
+import sys
+import time
 import uuid
 import webbrowser
 
@@ -29,6 +32,10 @@ DEFAULT_CONFIG = {
 
 app = Flask(__name__, static_folder="static")
 uploads = {}  # id -> {"name", "data"}; photos live in memory for this session
+# Reviewed change sets waiting for the user to press SAVE: token -> plan.
+# Nothing is written to music files except by /api/save with one of these.
+plans = {}
+PLAN_TTL = 30 * 60
 
 
 def load_config():
@@ -59,23 +66,30 @@ def get_config():
     })
 
 
-@app.get("/api/browse")
-def browse():
-    path = request.args.get("path") or load_config()["music_root"]
-    path = os.path.abspath(path)
-    if not os.path.isdir(path):
-        return err(f"Not a folder: {path}")
-    dirs = []
-    try:
-        for e in sorted(os.scandir(path), key=lambda e: e.name.lower()):
-            if e.is_dir() and not e.name.startswith("."):
-                dirs.append(e.name)
-    except PermissionError:
-        pass
-    has_audio = any(os.path.splitext(n)[1].lower() in tags.AUDIO_EXT for n in os.listdir(path))
-    parent = os.path.dirname(path)
-    return jsonify({"path": path, "parent": parent if parent != path else None,
-                    "dirs": dirs, "has_audio": has_audio})
+PICK_FOLDER_SCRIPT = r"""
+import sys, tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+root.attributes("-topmost", True)
+path = filedialog.askdirectory(parent=root, initialdir=sys.argv[1], mustexist=True,
+                               title="Choose an album folder")
+sys.stdout.write(path or "")
+"""
+
+
+@app.post("/api/pick-folder")
+def pick_folder():
+    """Open the standard Windows folder picker on this PC and return the choice."""
+    start = (request.json or {}).get("start") or load_config()["music_root"]
+    if not os.path.isdir(start):
+        start = os.path.expanduser("~")
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    # A separate process so the dialog gets its own UI thread.
+    out = subprocess.run([sys.executable, "-c", PICK_FOLDER_SCRIPT, start],
+                         capture_output=True, env=env, timeout=600)
+    path = out.stdout.decode("utf-8").strip()
+    return jsonify({"path": os.path.normpath(path) if path else None})
 
 
 @app.post("/api/scan")
@@ -192,42 +206,146 @@ def identify():
     return jsonify({"release": found, "results": results, "errors": errors})
 
 
-@app.post("/api/write")
-def write():
+def _album_files(folder):
+    return {os.path.normcase(os.path.abspath(p)): p for p in tags.list_audio(folder)}
+
+
+def _new_plan(kind, folder, paths, **extra):
+    token = uuid.uuid4().hex
+    plans[token] = {"kind": kind, "folder": folder, "created": time.time(),
+                    "stats": {p: tags.stat_key(p) for p in paths}, **extra}
+    return token
+
+
+@app.post("/api/preview")
+def preview():
+    """Work out exactly what SAVE would change. Writes nothing."""
     body = request.json or {}
     folder = os.path.abspath(body.get("path", ""))
-    allowed = {os.path.abspath(p) for p in tags.list_audio(folder)}
-    items = body.get("files", [])
-    for it in items:
-        if os.path.abspath(it["path"]) not in allowed:
-            return err(f"Refusing to write outside the album folder: {it['path']}")
+    allowed = _album_files(folder)
+    items = []
+    for it in body.get("files", []):
+        real = allowed.get(os.path.normcase(os.path.abspath(it["path"])))
+        if not real:
+            return err(f"Not a music file in this album folder: {it['path']}")
+        clean = {k: str(v if v is not None else "").strip()
+                 for k, v in it["tags"].items() if k in tags.FIELDS}
+        items.append({"path": real, "tags": clean, "cue": it.get("cue")})
 
     cover = None
     c = body.get("cover") or {}
     try:
         if c.get("upload_id") and c["upload_id"] in uploads:
-            data = uploads[c["upload_id"]]["data"]
-            cover = (cover_jpeg(data), "image/jpeg")
+            cover = (cover_jpeg(uploads[c["upload_id"]]["data"]), "image/jpeg")
         elif c.get("url"):
-            data, mime = sources.fetch_image(c["url"])
-            cover = (cover_jpeg(data), "image/jpeg")
+            cover = (cover_jpeg(sources.fetch_image(c["url"])[0]), "image/jpeg")
     except Exception as e:
         return err(f"Could not get cover art: {e}", 502)
 
-    backup_path = tags.backup(folder, [it["path"] for it in items])
-    written, cues = 0, []
+    files, side_files = [], []
     for it in items:
-        tags.write_file(it["path"], it["tags"], cover)
-        written += 1
+        old = tags.current_fields(it["path"])
+        changes = [{"field": k, "old": old.get(k, ""), "new": v}
+                   for k, v in it["tags"].items() if (old.get(k) or "") != v]
+        files.append({"name": os.path.relpath(it["path"], folder), "changes": changes,
+                      "cover": ("replace" if old["has_cover"] else "add") if cover else None})
         if it.get("cue"):
-            cues.append(tags.write_cue(it["path"], it["tags"].get("album", ""),
-                                       it["tags"].get("albumartist", ""), it["cue"]))
-    cover_file = None
+            text = tags.cue_text(it["path"], it["tags"].get("album", ""),
+                                 it["tags"].get("albumartist", ""), it["cue"])
+            side_files.append({"dest": tags.cue_path(it["path"]), "data": text.encode("utf-8-sig")})
     if cover and body.get("save_cover_file"):
-        cover_file = os.path.join(folder, load_config()["cover_filename"])
-        with open(cover_file, "wb") as fh:
-            fh.write(cover[0])
-    return jsonify({"written": written, "backup": backup_path, "cues": cues, "cover_file": cover_file})
+        side_files.append({"dest": os.path.join(folder, load_config()["cover_filename"]),
+                           "data": cover[0]})
+
+    token = _new_plan("tags", folder, [it["path"] for it in items], items=items, cover=cover,
+                      side_files=side_files)
+    return jsonify({
+        "token": token, "kind": "tags", "files": files, "has_cover": bool(cover),
+        "side_files": [{"name": os.path.relpath(f["dest"], folder),
+                        "action": "replace" if os.path.exists(f["dest"]) else "create"}
+                       for f in side_files],
+    })
+
+
+@app.get("/api/plan/<token>/cover")
+def plan_cover(token):
+    plan = plans.get(token)
+    if not plan or not plan.get("cover"):
+        return err("Not found", 404)
+    return send_file(io.BytesIO(plan["cover"][0]), mimetype=plan["cover"][1])
+
+
+@app.get("/api/backups")
+def backups():
+    return jsonify({"backups": tags.list_backups(request.args.get("path", ""))})
+
+
+@app.post("/api/restore-preview")
+def restore_preview():
+    """Show what undoing to a backup would change. Writes nothing."""
+    body = request.json or {}
+    folder = os.path.abspath(body.get("path", ""))
+    try:
+        data = tags.load_backup(body.get("backup", ""))
+    except (OSError, ValueError):
+        return err("Backup not found.")
+    allowed = _album_files(folder)
+    snaps, files, missing = {}, [], []
+    for path, snap in data["files"].items():
+        real = allowed.get(os.path.normcase(path))
+        if not real:
+            missing.append(os.path.basename(path))
+            continue
+        old, new = tags.current_fields(real), tags.fields_from_snapshot(snap)
+        changes = [{"field": k, "old": old.get(k, ""), "new": new.get(k, "")}
+                   for k in tags.FIELDS if (old.get(k) or "") != (new.get(k) or "")]
+        files.append({"name": os.path.relpath(real, folder), "changes": changes,
+                      "cover": "restore" if old["has_cover"] or new["has_cover"] else None})
+        snaps[real] = snap
+    token = _new_plan("restore", folder, list(snaps), snaps=snaps, backup=body.get("backup"))
+    return jsonify({"token": token, "kind": "restore", "files": files, "missing": missing,
+                    "side_files": [], "has_cover": False, "created": data["created"]})
+
+
+@app.post("/api/save")
+def save():
+    """Apply a reviewed plan, exactly as it was previewed."""
+    token = (request.json or {}).get("token", "")
+    plan = plans.pop(token, None)
+    if not plan:
+        return err("This review has expired or was already saved. Review the changes again.")
+    if time.time() - plan["created"] > PLAN_TTL:
+        return err("This review is more than 30 minutes old. Review the changes again.")
+    changed = [p for p, st in plan["stats"].items()
+               if not os.path.exists(p) or tags.stat_key(p) != st]
+    if changed:
+        return err("These files changed since you reviewed them (maybe in Mp3tag or MediaMonkey), "
+                   "so nothing was saved. Load the folder and review again: "
+                   + ", ".join(os.path.basename(p) for p in changed))
+
+    paths = list(plan["stats"])
+    backup_path = tags.backup(plan["folder"], paths,
+                              "before undo" if plan["kind"] == "restore" else "before save")
+    saved, failed = [], []
+    for p in paths:
+        try:
+            if plan["kind"] == "restore":
+                tags.restore_file(p, plan["snaps"][p])
+            else:
+                it = next(i for i in plan["items"] if i["path"] == p)
+                tags.write_file(p, it["tags"], plan["cover"])
+            saved.append(os.path.basename(p))
+        except Exception as e:
+            failed.append(f"{os.path.basename(p)}: {e}")
+    extra = []
+    for f in plan.get("side_files", []):
+        try:
+            tags.write_side_file(f["dest"], f["data"])
+            extra.append(os.path.basename(f["dest"]))
+        except Exception as e:
+            failed.append(f"{os.path.basename(f['dest'])}: {e}")
+    return jsonify({"saved": saved, "failed": failed, "side_files": extra,
+                    "backup": os.path.basename(backup_path)})
 
 
 def cover_jpeg(data, max_edge=1200):
@@ -240,7 +358,6 @@ def cover_jpeg(data, max_edge=1200):
 
 
 if __name__ == "__main__":
-    import sys
     port = load_config()["port"]
     if "--no-browser" not in sys.argv:
         webbrowser.open(f"http://127.0.0.1:{port}")
