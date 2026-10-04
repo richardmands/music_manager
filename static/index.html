@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CD Tagger</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>CD Tagger</h1>
+  <div class="status" id="status"></div>
+  <label class="lang">Names
+    <select id="lang">
+      <option value="ja">日本語 (original)</option>
+      <option value="romaji">Romaji</option>
+      <option value="en">English</option>
+    </select>
+  </label>
+</header>
+
+<main>
+  <!-- 1. Folder -->
+  <section class="panel" id="folderPanel">
+    <h2><span class="step">1</span> Album folder</h2>
+    <div class="row">
+      <input id="folderPath" placeholder="D:\Music\Artist\Album" spellcheck="false">
+      <button id="browseBtn" class="secondary">Browse…</button>
+      <button id="scanBtn">Load</button>
+    </div>
+    <div id="browser" class="browser hidden"></div>
+    <div id="fileInfo" class="muted"></div>
+    <div class="table-wrap"><table id="fileTable" class="hidden">
+      <thead><tr><th>File</th><th>Disc</th><th>#</th><th>Side</th><th>Length</th><th>Current title</th><th>Art</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <!-- 2. Find -->
+  <section class="panel" id="findPanel">
+    <h2><span class="step">2</span> Find metadata</h2>
+    <div class="tabs">
+      <button class="tab active" data-tab="searchTab">Search databases</button>
+      <button class="tab" data-tab="photoTab">From photos</button>
+    </div>
+
+    <div id="searchTab" class="tabpane">
+      <div class="grid2">
+        <label>Artist<input id="qArtist"></label>
+        <label>Album<input id="qAlbum"></label>
+        <label>Catalog no.<input id="qCatno" placeholder="e.g. VICL-60001"></label>
+        <label>Barcode<input id="qBarcode" placeholder="4988002..."></label>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" class="src" value="musicbrainz" checked> MusicBrainz</label>
+        <label class="check" title="Uses the unofficial vgmdb.info mirror, which is often offline"><input type="checkbox" class="src" value="vgmdb"> VGMdb (mirror, often offline)</label>
+        <label class="check"><input type="checkbox" class="src" value="discogs" checked> Discogs</label>
+      </div>
+      <div class="row">
+        <button id="searchBtn">Search</button>
+        <button id="tocBtn" class="secondary" title="Matches your rip's track lengths against MusicBrainz disc IDs. CD rips only.">Look up by track lengths</button>
+      </div>
+      <p class="hint">Catalog number or barcode is the most reliable search for Japanese releases. The catalog number is on the spine or obi.</p>
+    </div>
+
+    <div id="photoTab" class="tabpane hidden">
+      <div id="drop" class="drop">
+        Drop photos of the front, back or obi here, or <label class="link">choose files<input type="file" id="photoInput" accept="image/*" multiple hidden></label>
+      </div>
+      <div id="photos" class="photos"></div>
+      <label>Notes for Claude (optional)<input id="hints" placeholder="e.g. 2-disc anime soundtrack, back cover is blurry"></label>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="useWeb" checked> Also search the web to confirm and complete the track list</label>
+      </div>
+      <div class="row">
+        <button id="identifyBtn">Read with Claude</button>
+      </div>
+      <p class="hint" id="claudeHint"></p>
+      <div id="claudeResult"></div>
+    </div>
+
+    <div id="errors" class="errors"></div>
+    <div id="results" class="results"></div>
+  </section>
+
+  <!-- 3. Review & write -->
+  <section class="panel hidden" id="reviewPanel">
+    <h2><span class="step">3</span> Review &amp; write</h2>
+    <div class="source-line" id="sourceLine"></div>
+
+    <div class="review-top">
+      <div class="covers">
+        <div class="cover-choices" id="coverChoices"></div>
+        <label class="check"><input type="checkbox" id="saveCoverFile" checked> Also save <span id="coverFilename">cover.jpg</span> in folder</label>
+      </div>
+      <div class="grid2 album-fields">
+        <label>Album<input data-f="album"></label>
+        <label>Album artist<input data-f="albumartist"></label>
+        <label>Date<input data-f="date"></label>
+        <label>Genre<input data-f="genre"></label>
+        <label>Label<input data-f="label"></label>
+        <label>Catalog no.<input data-f="catalognumber"></label>
+        <label>Barcode<input data-f="barcode"></label>
+        <label>Mode
+          <select id="mode">
+            <option value="cd">CD: one file per track</option>
+            <option value="vinyl">Vinyl: one file per side</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div id="vinylOptions" class="row hidden">
+      <label>Side title
+        <select id="sideTitle">
+          <option value="side-list">Side A: Song 1 / Song 2 / …</option>
+          <option value="list">Song 1 / Song 2 / …</option>
+          <option value="side">Side A</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="writeCue" checked> Write a .cue sheet per side (estimated track starts)</label>
+    </div>
+
+    <div id="mapWarn" class="warn hidden"></div>
+    <div class="table-wrap"><table id="mapTable">
+      <thead></thead><tbody></tbody>
+    </table></div>
+
+    <div class="row end">
+      <button id="writeBtn" class="primary">Write tags to files</button>
+    </div>
+    <div id="writeResult"></div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

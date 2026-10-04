@@ -1,0 +1,5 @@
+anthropic>=1.11
+flask>=3.0
+mutagen>=1.47
+requests>=2.31
+pillow>=10.0

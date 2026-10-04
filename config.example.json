@@ -1,0 +1,8 @@
+{
+  "music_root": "D:\Music",
+  "discogs_token": "",
+  "anthropic_api_key": "",
+  "language": "ja",
+  "cover_filename": "cover.jpg",
+  "port": 5173
+}
