@@ -150,6 +150,7 @@ async function scan() {
     $("#results").innerHTML = ""; showErrors({});
     $("#reviewPanel").classList.add("hidden");
     $("#backupsBtn").classList.remove("hidden");
+    $("#editCurrentBtn").classList.remove("hidden");
     state.extraCovers = [];
     $("#chatPrompt").value = ""; $("#chatReply").value = ""; $("#chatResult").innerHTML = "";
     $("#chatCopyBtn").disabled = true; $("#chatCopied").textContent = "";
@@ -470,11 +471,13 @@ function loadRelease(rel) {
   const fields = {
     album: pickName(rel.title, rel.title_romanized),
     albumartist: pickName(rel.album_artist || rel.artist, rel.artist_romanized),
-    date: rel.date, genre: "", label: rel.label, catalognumber: rel.catalog, barcode: rel.barcode,
+    date: rel.date, genre: rel.genre, label: rel.label, catalognumber: rel.catalog, barcode: rel.barcode,
+    disctotal: new Set((state.scan?.files || []).map(f => f.disc)).size > 1
+      ? String(new Set(state.scan.files.map(f => f.disc)).size) : "",
   };
-  const keepGenre = $('[data-f="genre"]').value;
-  for (const [k, v] of Object.entries(fields)) $(`[data-f="${k}"]`).value = v || "";
-  $('[data-f="genre"]').value = keepGenre;
+  // Where the source has no value, keep what the files already have rather than blanking it.
+  const existing = state.scan?.files[0] || {};
+  for (const [k, v] of Object.entries(fields)) $(`[data-f="${k}"]`).value = v || existing[k] || "";
 
   const isVinyl = state.scan?.looks_like_vinyl || (/vinyl|LP|12"|7"/i.test(rel.format || "") &&
     state.scan && state.scan.files.length < rel.track_count);
@@ -484,6 +487,25 @@ function loadRelease(rel) {
   renderMap();
   panel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
+// Review the files' own tags, e.g. to fix a few fields by hand or only add cover art.
+$("#editCurrentBtn").onclick = () => {
+  const files = state.scan.files;
+  const first = files[0];
+  const discs = [...new Set(files.map(f => f.disc))].sort((a, b) => a - b).map(d => ({
+    number: d,
+    tracks: files.filter(f => f.disc === d).map((f, i) => ({
+      number: i + 1, position: f.side || "", title: f.title, artist: f.artist,
+      length: Math.round(f.length),
+    })),
+  }));
+  loadRelease({
+    source: "current tags", id: "", url: "", title: first.album, artist: first.albumartist || first.artist,
+    album_artist: first.albumartist, date: first.date, genre: first.genre, label: first.label,
+    catalog: first.catalognumber, barcode: first.barcode, format: state.scan.looks_like_vinyl ? "Vinyl" : "",
+    track_count: files.length, cover_url: "", discs,
+  });
+};
 
 state.extraCovers = [];  // images added in the Review panel: {key, label, cover, img}
 
@@ -576,9 +598,9 @@ function renderCdMap() {
     const lenCls = diff == null ? "" : diff > 3 ? "len-bad" : "len-ok";
     return `<tr data-i="${i}">
       <td class="file" title="${esc(p.file.name)}">${esc(p.file.name)}</td>
-      <td class="num">${p.disc}</td><td class="num">${p.number}</td>
+      <td class="num"><input data-k="disc" value="${esc(p.file.discnumber_tag || (discTotal > 1 || p.file.disc > 1 ? p.file.disc : ""))}" class="disc-input" inputmode="numeric"></td><td class="num">${p.number}</td>
       <td><input data-k="title" value="${esc(p.track?.title || p.file.title)}"></td>
-      <td><input data-k="artist" value="${esc(pickName(p.track?.artist, null) || albumArtist)}"></td>
+      <td><input data-k="artist" value="${esc(p.track?.artist || p.file.artist || albumArtist)}"></td>
       <td class="num ${lenCls}">${fmtLen(p.file.length)} / ${fmtLen(rl) || "?"}</td></tr>`;
   }).join("");
 }
@@ -675,14 +697,14 @@ function albumTags() {
 function buildWritePlan() {
   const album = albumTags();
   if ($("#mode").value === "cd") {
-    const { pairs, discTotal } = state;
+    const { pairs } = state;
     return $$("#mapTable tbody tr").map((tr, i) => {
       const p = pairs[i];
       return { path: p.file.path, tags: { ...album,
         title: $('[data-k="title"]', tr).value.trim(),
         artist: $('[data-k="artist"]', tr).value.trim() || album.albumartist,
         tracknumber: String(p.number), tracktotal: String(p.total),
-        discnumber: discTotal > 1 ? String(p.disc) : "", disctotal: discTotal > 1 ? String(discTotal) : "",
+        discnumber: $('[data-k="disc"]', tr).value.trim(),
       } };
     });
   }

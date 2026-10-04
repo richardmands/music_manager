@@ -48,6 +48,7 @@
     </div>
     <div class="row">
       <div id="fileInfo" class="muted" style="flex:1"></div>
+      <button id="editCurrentBtn" class="secondary hidden" title="Edit the tags these files already have, or just change the cover art">Edit tags / cover</button>
       <button id="backupsBtn" class="secondary hidden">Undo / backups</button>
     </div>
     <div id="backupList" class="backup-list hidden"></div>
@@ -146,6 +147,7 @@
         <label>Label<input data-f="label"></label>
         <label>Catalog no.<input data-f="catalognumber"></label>
         <label>Barcode<input data-f="barcode"></label>
+        <label>Total discs<input data-f="disctotal" placeholder="leave empty for a single disc"></label>
         <label>Mode
           <select id="mode">
             <option value="cd">CD: one file per track</option>

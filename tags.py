@@ -175,7 +175,8 @@ def read_file(path, folder):
 
     disc = _num(tags["discnumber"])
     if disc is None:
-        m = DISC_DIR_RE.search(os.path.relpath(os.path.dirname(path), folder))
+        m = (DISC_DIR_RE.search(os.path.relpath(os.path.dirname(path), folder))
+             or DISC_DIR_RE.search(os.path.basename(os.path.normpath(folder))))
         disc = int(m.group(1)) if m else 1
     track = _num(tags["tracknumber"])
     if track is None:
@@ -186,9 +187,10 @@ def read_file(path, folder):
     side = (tags["vinyl_side"] or (m and (m.group(1) or m.group(2))) or "").upper()
 
     info.update({k: tags[k] for k in ("title", "artist", "album", "albumartist", "date",
-                                      "genre", "label", "catalognumber", "barcode")})
+                                      "genre", "label", "catalognumber", "barcode",
+                                      "disctotal")})
     info.update({"disc": disc, "track": track, "side": side, "has_cover": tags["has_cover"],
-                 "has_tracknumber": bool(tags["tracknumber"])})
+                 "has_tracknumber": bool(tags["tracknumber"]), "discnumber_tag": tags["discnumber"]})
     return info
 
 

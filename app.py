@@ -302,6 +302,9 @@ def preview():
     files, side_files = [], []
     for it in items:
         old = tags.current_fields(it["path"])
+        for k in ("tracknumber", "tracktotal", "discnumber", "disctotal"):
+            if k in it["tags"] and it["tags"][k].isdigit() and (old.get(k) or "").isdigit()                     and int(it["tags"][k]) == int(old[k]):
+                del it["tags"][k]  # same number, e.g. "01" vs "1": leave the file's format alone
         changes = [{"field": k, "old": old.get(k, ""), "new": v}
                    for k, v in it["tags"].items() if (old.get(k) or "") != v]
         files.append({"name": os.path.relpath(it["path"], folder), "changes": changes,
