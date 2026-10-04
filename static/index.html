@@ -20,6 +20,24 @@
 </header>
 
 <main>
+  <!-- Library check -->
+  <section class="panel" id="libraryPanel">
+    <div class="lib-head">
+      <h2>Library check</h2>
+      <span class="muted" id="libSummary">Checking your library…</span>
+      <label class="lib-filter">Show
+        <select id="libFilter">
+          <option value="major">Albums that need attention</option>
+          <option value="any">Albums with any gaps</option>
+          <option value="all">All albums</option>
+        </select>
+      </label>
+      <button id="libRescan" class="secondary">Check again</button>
+    </div>
+    <p class="hint">Read-only: this only looks at your files. Missing or generic song titles (like “Track01”) are listed first.</p>
+    <div id="libList" class="lib-list"></div>
+  </section>
+
   <!-- 1. Folder -->
   <section class="panel" id="folderPanel">
     <h2><span class="step">1</span> Album folder</h2>

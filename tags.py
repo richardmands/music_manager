@@ -172,9 +172,51 @@ def read_file(path, folder):
     side = (tags["vinyl_side"] or (m and (m.group(1) or m.group(2))) or "").upper()
 
     info.update({k: tags[k] for k in ("title", "artist", "album", "albumartist", "date",
-                                      "label", "catalognumber", "barcode")})
-    info.update({"disc": disc, "track": track, "side": side, "has_cover": tags["has_cover"]})
+                                      "genre", "label", "catalognumber", "barcode")})
+    info.update({"disc": disc, "track": track, "side": side, "has_cover": tags["has_cover"],
+                 "has_tracknumber": bool(tags["tracknumber"])})
     return info
+
+
+# ---------------------------------------------------------- library check
+
+GENERIC_TITLE = re.compile(
+    r"^(?:track|トラック|audio\s*track|unknown|untitled|no\s*title|title|曲)\s*[-_#.]?\s*\d*$|^\d+$", re.I)
+VARIOUS = re.compile(r"^(?:various(?: artists)?|va|v\.a\.|オムニバス)$", re.I)
+
+
+def audit_album(folder):
+    """Read-only check of one album folder. Returns problems, worst first.
+
+    level "major": song titles/artists/album/track numbers/cover missing or generic.
+    level "minor": nice-to-have fields such as date, album artist, genre.
+    """
+    files = scan_folder(folder)
+    n = len(files)
+    problems = []
+
+    def check(level, label, bad):
+        k = sum(1 for f in files if bad(f))
+        if k:
+            problems.append({"level": level, "text": label + (f" ({k} of {n})" if k != n else "")})
+
+    if not files:
+        return {"files": 0, "problems": []}
+    check("major", "Missing song titles", lambda f: not f["title"].strip())
+    check("major", "Generic song titles like “Track01”",
+          lambda f: f["title"].strip() and GENERIC_TITLE.match(f["title"].strip()))
+    check("major", "Missing artist", lambda f: not f["artist"].strip())
+    check("major", "Song artists are “Various Artists”", lambda f: VARIOUS.match(f["artist"].strip()))
+    check("major", "Missing album name", lambda f: not f["album"].strip())
+    check("major", "Missing track numbers", lambda f: not f["has_tracknumber"])
+    check("major", "No cover art", lambda f: not f["has_cover"])
+    if len({f["album"] for f in files if f["album"]}) > 1:
+        problems.append({"level": "major", "text": "Files disagree on the album name"})
+    check("minor", "No date", lambda f: not f["date"])
+    check("minor", "No album artist", lambda f: not f["albumartist"])
+    check("minor", "No genre", lambda f: not f["genre"])
+    check("minor", "No catalog number", lambda f: not f["catalognumber"])
+    return {"files": n, "problems": problems}
 
 
 def scan_folder(folder):

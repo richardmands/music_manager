@@ -6,6 +6,12 @@ MediaMonkey pick up the result.
 
 ## What it does
 
+**Library check** runs when the app opens. It reads (never writes) every album
+under your `music_root` and lists the ones that need attention: missing or
+generic song titles like “Track01” first, then missing artists, album names,
+track numbers or cover art. Smaller gaps (date, album artist, genre, catalog
+number) can be shown with the filter. **Open** loads that album below.
+
 1. **Load an album folder.** Shows its FLAC/MP3 files, current tags, and
    whether they look like vinyl sides (`Side A.flac`, `Side B.flac`, …).
    `CD1`/`CD2` subfolders are treated as discs.

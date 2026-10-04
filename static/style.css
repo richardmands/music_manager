@@ -55,7 +55,7 @@ main {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   max-width: 1600px; margin: 0 auto;
 }
-#reviewPanel { grid-column: 1 / -1; }
+#reviewPanel, #libraryPanel { grid-column: 1 / -1; }
 @media (max-width: 1000px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; } }
 
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
@@ -160,3 +160,17 @@ table.diff .new { color: var(--ok); font-weight: 600; }
 table.diff .empty { color: var(--muted); font-style: italic; }
 .dialog-buttons { border-top: 1px solid var(--border); padding-top: 12px; margin-bottom: 0; }
 button.save { min-width: 140px; letter-spacing: .04em; }
+
+.lib-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.lib-head h2 { margin: 0; }
+.lib-head #libSummary { flex: 1; min-width: 200px; }
+.lib-filter { flex-direction: row; align-items: center; gap: 6px; }
+.lib-list { max-height: 340px; overflow: auto; border-top: 1px solid var(--border); }
+.lib-row { display: grid; grid-template-columns: minmax(180px, 2fr) 3fr auto; gap: 10px; align-items: center;
+  padding: 6px 4px; border-bottom: 1px solid var(--border); }
+@media (max-width: 800px) { .lib-row { grid-template-columns: 1fr auto; } .lib-row .chips { grid-column: 1 / -1; grid-row: 2; } }
+.lib-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: var(--soft); color: var(--muted); }
+.chip.major { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+.chip.ok { color: var(--ok); }

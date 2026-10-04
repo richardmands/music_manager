@@ -5,11 +5,13 @@ Run:  python app.py   then open http://127.0.0.1:5173
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 import uuid
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ImageOps
 
@@ -41,8 +43,13 @@ PLAN_TTL = 30 * 60
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, encoding="utf-8") as fh:
-            cfg.update(json.load(fh))
+        with open(CONFIG_PATH, encoding="utf-8-sig") as fh:
+            text = fh.read()
+        try:
+            cfg.update(json.loads(text))
+        except json.JSONDecodeError:
+            # Allow Windows paths typed with single backslashes, e.g. "F:\Music".
+            cfg.update(json.loads(re.sub(r'\\(?![\\"/bfnrtu])', r"\\\\", text)))
     return cfg
 
 
@@ -90,6 +97,44 @@ def pick_folder():
                          capture_output=True, env=env, timeout=600)
     path = out.stdout.decode("utf-8").strip()
     return jsonify({"path": os.path.normpath(path) if path else None})
+
+
+def find_album_folders(root, max_depth=4):
+    """Folders holding music directly, with CD1/CD2-style subfolders folded into their parent."""
+    albums = set()
+    root_depth = root.rstrip("\\/").count(os.sep)
+    for dirpath, dirs, files in os.walk(root):
+        dirs.sort()
+        if dirpath.count(os.sep) - root_depth >= max_depth:
+            dirs[:] = []
+        if any(os.path.splitext(f)[1].lower() in tags.AUDIO_EXT for f in files):
+            parent = os.path.dirname(dirpath)
+            if tags.DISC_DIR_RE.search(os.path.basename(dirpath)) and parent != root.rstrip("\\/"):
+                albums.add(parent)
+            else:
+                albums.add(dirpath)
+    return sorted(albums, key=str.lower)
+
+
+@app.get("/api/audit")
+def audit():
+    """Read-only check of the whole library (or one album with ?album=)."""
+    root = os.path.abspath(request.args.get("path") or load_config()["music_root"])
+    single = request.args.get("album")
+    if not os.path.isdir(single or root):
+        return err(f"Not a folder: {single or root}")
+    folders = [single] if single else find_album_folders(root)
+
+    def one(folder):
+        try:
+            r = tags.audit_album(folder)
+        except Exception as e:
+            r = {"files": 0, "problems": [{"level": "major", "text": f"Could not read: {e}"}]}
+        return {"path": folder, "name": os.path.relpath(folder, root) if not single else os.path.basename(folder), **r}
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        albums = list(pool.map(one, folders))
+    return jsonify({"root": root, "albums": albums})
 
 
 @app.post("/api/scan")

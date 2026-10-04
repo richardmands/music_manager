@@ -57,10 +57,67 @@ async function init() {
   }
   const last = localStorageGet("lastFolder");
   $("#folderPath").value = last || "";
+  runAudit();
 }
 
 function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch { } }
+
+// ------------------------------------------------------- library check
+
+state.audit = [];
+
+// Albums with missing/generic song titles first, then other major gaps, then minor.
+function auditRank(a) {
+  const major = a.problems.filter(p => p.level === "major");
+  const titles = major.some(p => /song titles/.test(p.text));
+  return titles ? 0 : major.length ? 1 : a.problems.length ? 2 : 3;
+}
+
+async function runAudit() {
+  $("#libSummary").textContent = "Checking your library…";
+  $("#libRescan").disabled = true;
+  try {
+    const d = await api("/api/audit");
+    state.audit = d.albums;
+    state.auditRoot = d.root;
+    renderAudit();
+  } catch (e) {
+    $("#libSummary").textContent = e.message;
+  } finally { $("#libRescan").disabled = false; }
+}
+
+function renderAudit() {
+  const albums = [...state.audit].sort((a, b) => auditRank(a) - auditRank(b) || a.name.localeCompare(b.name));
+  const major = albums.filter(a => auditRank(a) <= 1).length;
+  const any = albums.filter(a => a.problems.length).length;
+  $("#libSummary").textContent = `${state.auditRoot}: ${albums.length} albums · ${major} need attention · ${any} with any gaps`;
+  const f = $("#libFilter").value;
+  const shown = albums.filter(a => f === "all" || (f === "any" ? a.problems.length : auditRank(a) <= 1));
+  $("#libList").innerHTML = shown.length ? shown.map(a => `<div class="lib-row">
+      <div class="lib-name" title="${esc(a.path)}">${esc(a.name)} <span class="muted">· ${a.files} files</span></div>
+      <div class="chips">${a.problems.map(p => `<span class="chip ${p.level}">${esc(p.text)}</span>`).join("") ||
+        `<span class="chip ok">Looks complete</span>`}</div>
+      <button class="secondary" data-open="${esc(a.path)}">Open</button>
+    </div>`).join("") : `<div class="muted">Nothing to show with this filter.</div>`;
+  $$("[data-open]", $("#libList")).forEach(b => b.onclick = async () => {
+    $("#folderPath").value = b.dataset.open;
+    await scan();
+    $("#folderPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+async function refreshAuditFor(path) {
+  try {
+    const d = await api(`/api/audit?album=${encodeURIComponent(path)}`);
+    const fresh = d.albums[0];
+    const i = state.audit.findIndex(a => a.path === path);
+    if (i >= 0) { state.audit[i] = { ...state.audit[i], ...fresh, name: state.audit[i].name }; renderAudit(); }
+  } catch { /* the full check can be rerun */ }
+}
+
+$("#libFilter").onchange = renderAudit;
+$("#libRescan").onclick = runAudit;
 
 // ------------------------------------------------------------- 1. folder
 
@@ -557,6 +614,7 @@ function openReview(d, heading) {
       state.scan = { ...state.scan, files: fresh.files };
       renderFileTable(fresh.files);
       $("#backupList").classList.add("hidden");
+      refreshAuditFor(state.scan.path);
     } catch (e) {
       $("#saveResult").innerHTML = `<div class="err-box">${esc(e.message)}</div>`;
       $("#saveBtn").disabled = true;
