@@ -150,6 +150,8 @@ async function scan() {
     $("#results").innerHTML = ""; showErrors({});
     $("#reviewPanel").classList.add("hidden");
     $("#backupsBtn").classList.remove("hidden");
+    $("#chatPrompt").value = ""; $("#chatReply").value = ""; $("#chatResult").innerHTML = "";
+    $("#chatCopyBtn").disabled = true; $("#chatCopied").textContent = "";
     $("#backupList").classList.add("hidden");
   });
 }
@@ -299,6 +301,146 @@ $("#identifyBtn").onclick = () => {
   });
 };
 
+// ----------------------------------------------------- ask an AI chat
+// Builds a prompt for the user's own AI chat, and reads the JSON reply back.
+
+const CHAT_FORMAT = `{
+  "album_title": "Album title exactly as printed, original script",
+  "album_title_romanized": "Hepburn romanization, or null if already Latin script",
+  "artist": "Album artist, original script (use the real artist, or Various Artists for compilations)",
+  "artist_romanized": "romanization or null",
+  "release_date": "YYYY-MM-DD, YYYY-MM or YYYY, or null",
+  "label": "Record label or null",
+  "catalog_number": "e.g. VICL-60001, or null",
+  "barcode": "digits only, or null",
+  "media": "CD or Vinyl",
+  "discs": [
+    {
+      "number": 1,
+      "tracks": [
+        {
+          "number": 1,
+          "position": "A1 for vinyl, otherwise null",
+          "title": "Song title exactly as printed, original script",
+          "title_romanized": "romanization or null",
+          "artist": "This song's artist (important for compilations), or null if same as album artist",
+          "length": "m:ss or null"
+        }
+      ]
+    }
+  ],
+  "confidence": "high, medium or low",
+  "notes": "Anything uncertain, and which edition you matched",
+  "sources": ["URLs you used"]
+}`;
+
+function buildChatPrompt() {
+  const sc = state.scan;
+  const files = sc.files;
+  const folder = sc.path.split(/[\\/]/).pop();
+  const first = files[0];
+  const generic = files.filter(f => !f.title || /^(track|トラック|audio\s*track|unknown|untitled)\s*\d*$|^\d+$/i.test(f.title.trim())).length;
+  const known = [
+    ["Album", first.album], ["Album artist", first.albumartist || first.artist], ["Date", first.date],
+    ["Label", first.label], ["Catalog number", first.catalognumber], ["Barcode", first.barcode],
+  ].filter(([, v]) => v).map(([k, v]) => `- ${k}: ${v}`);
+  let layout;
+  if (sc.looks_like_vinyl) {
+    layout = "It's a vinyl record, ripped as one file per side:\n" +
+      files.map(f => `- Side ${f.side || "?"}: ${fmtLen(f.length)} total`).join("\n");
+  } else {
+    const byDisc = {};
+    files.forEach(f => (byDisc[f.disc] ||= []).push(f));
+    layout = Object.entries(byDisc).map(([d, fs]) =>
+      `Disc ${d}: ${fs.length} tracks. Exact lengths of my ripped tracks:\n` +
+      fs.map((f, i) => `  ${i + 1}. ${fmtLen(f.length)}${f.title && generic < files.length ? `  (currently tagged "${f.title}")` : ""}`).join("\n")
+    ).join("\n");
+  }
+  return `I've ripped a ${sc.looks_like_vinyl ? "vinyl record" : "CD"} (most of my collection is Japanese releases) and need accurate metadata for it. Please identify the exact release and give me its full track list.
+
+What I know:
+- Folder name: ${folder}
+${known.join("\n")}
+${generic ? `- ${generic === files.length ? "All" : generic} of the song titles are missing or placeholders like "Track01", so don't rely on them.\n` : ""}
+${layout}
+
+How to find it:
+- Search the web: VGMdb, MusicBrainz, Discogs, Amazon.co.jp, Tower Records Japan, HMV Japan, CDJournal and the label's or artist's official site are good sources. A catalog number (like ABCD-12345, printed on the spine or obi) is the most reliable thing to search for.
+- If I've attached photos of the packaging, read them first.
+- Make sure the track count and track lengths match my rip (within a few seconds). If there are several editions, pick the one that matches.
+- Write titles and names exactly as printed, in the original script (kanji/kana). Put a Hepburn romanization in the *_romanized fields when the original isn't in Latin script.
+- For compilations, give each song's own artist.
+- Don't guess. If you can't confirm something, use null and explain it in "notes".
+
+Reply with ONLY one JSON code block in exactly this format (the values below describe what goes in each field):
+
+\`\`\`json
+${CHAT_FORMAT}
+\`\`\``;
+}
+
+$("#chatMakeBtn").onclick = () => {
+  if (!state.scan) return showErrors({ error: "Load an album folder first." });
+  $("#chatPrompt").value = buildChatPrompt();
+  $("#chatCopyBtn").disabled = false;
+  $("#chatCopied").textContent = "";
+};
+
+$("#chatCopyBtn").onclick = async () => {
+  const box = $("#chatPrompt");
+  try { await navigator.clipboard.writeText(box.value); }
+  catch { box.select(); document.execCommand("copy"); }
+  $("#chatCopied").textContent = "Copied. Paste it into a new chat.";
+};
+
+function parseChatReply(text) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  let body = fenced ? fenced[1] : text;
+  const a = body.indexOf("{"), b = body.lastIndexOf("}");
+  if (a < 0 || b < a) throw new Error("Couldn't find a JSON block in the reply.");
+  body = body.slice(a, b + 1).replace(/[“”]/g, '"');
+  let r;
+  try { r = JSON.parse(body); }
+  catch (e) { throw new Error(`The JSON in the reply isn't valid (${e.message}). Ask the chat to resend just the JSON block.`); }
+  if (!r.album_title) throw new Error('The reply has no "album_title".');
+  if (!Array.isArray(r.discs) || !r.discs.some(d => d.tracks?.length))
+    throw new Error('The reply has no track list ("discs" → "tracks").');
+  const albumArtist = r.artist || "";
+  const discs = r.discs.map((d, i) => ({
+    number: d.number || i + 1,
+    tracks: (d.tracks || []).map((t, j) => ({
+      number: t.number || j + 1, position: t.position || "",
+      title: t.title || "", title_romanized: t.title_romanized || "",
+      artist: t.artist || albumArtist, length: parseLen(t.length || ""),
+    })),
+  }));
+  return {
+    source: "AI chat", id: "", url: (r.sources || [])[0] || "",
+    title: r.album_title, title_romanized: r.album_title_romanized || "",
+    artist: albumArtist, artist_romanized: r.artist_romanized || "", album_artist: albumArtist,
+    date: r.release_date || "", country: "", label: r.label || "", catalog: r.catalog_number || "",
+    barcode: String(r.barcode || "").replace(/\D/g, ""), format: r.media || "",
+    track_count: discs.reduce((n, d) => n + d.tracks.length, 0), cover_url: "",
+    discs, confidence: r.confidence, notes: r.notes || "", sources: r.sources || [],
+  };
+}
+
+$("#chatUseBtn").onclick = () => {
+  const out = $("#chatResult");
+  if (!state.scan) { out.innerHTML = `<span class="err-box">Load the album folder first.</span>`; return; }
+  try {
+    const rel = parseChatReply($("#chatReply").value);
+    const n = state.scan.files.length;
+    const countNote = state.scan.looks_like_vinyl ? "" :
+      rel.track_count === n ? ` · ${n} tracks ✓` : ` · ${rel.track_count} tracks, but the folder has ${n} files`;
+    out.innerHTML = `<span class="ok-box">Loaded “${esc(rel.title)}”${esc(countNote)}${rel.confidence ? ` · confidence: ${esc(rel.confidence)}` : ""}. Check it in Review below.</span>` +
+      (rel.notes ? `<div class="notes muted">${esc(rel.notes)}</div>` : "");
+    loadRelease(rel);
+  } catch (e) {
+    out.innerHTML = `<span class="err-box">${esc(e.message)}</span>`;
+  }
+};
+
 $("#lang").onchange = async () => {
   if (state.release?.source === "vgmdb") {
     try { loadRelease(await api(`/api/release?source=vgmdb&id=${state.release.id}&lang=${lang()}`)); }
@@ -317,8 +459,9 @@ function loadRelease(rel) {
   state.release = rel;
   const panel = $("#reviewPanel");
   panel.classList.remove("hidden");
+  const links = rel.sources?.length ? rel.sources : rel.url ? [rel.url] : [];
   $("#sourceLine").innerHTML = `From <b>${esc(rel.source)}</b>` +
-    (rel.url ? ` · <a href="${esc(rel.url)}" target="_blank" rel="noopener">${esc(rel.url)}</a>` : "");
+    links.map(u => ` · <a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join("");
 
   const fields = {
     album: pickName(rel.title, rel.title_romanized),

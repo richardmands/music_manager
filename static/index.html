@@ -63,6 +63,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="searchTab">Search databases</button>
       <button class="tab" data-tab="photoTab">From photos</button>
+      <button class="tab" data-tab="chatTab">Ask an AI chat</button>
     </div>
 
     <div id="searchTab" class="tabpane">
@@ -98,6 +99,25 @@
       </div>
       <p class="hint" id="claudeHint"></p>
       <div id="claudeResult"></div>
+    </div>
+
+    <div id="chatTab" class="tabpane hidden">
+      <p class="hint">Use your own Claude chat (claude.ai) to research the album. Create the instructions,
+        paste them into a new chat with web search turned on (you can attach photos of the cover, back or obi too),
+        then paste the reply below.</p>
+      <div class="row">
+        <button id="chatMakeBtn">1. Create instructions</button>
+        <button id="chatCopyBtn" class="secondary" disabled>Copy</button>
+        <span id="chatCopied" class="muted"></span>
+      </div>
+      <textarea id="chatPrompt" class="chat-box" readonly placeholder="Load an album folder, then press Create instructions."></textarea>
+      <label>2. Paste the AI's reply here
+        <textarea id="chatReply" class="chat-box" placeholder='The reply should contain a JSON block starting with { "album_title": ...'></textarea>
+      </label>
+      <div class="row">
+        <button id="chatUseBtn">Use this reply</button>
+        <span id="chatResult"></span>
+      </div>
     </div>
 
     <div id="errors" class="errors"></div>

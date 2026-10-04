@@ -24,6 +24,11 @@ number) can be shown with the filter. **Open** loads that album below.
      them, including Japanese text, catalog number and barcode, and can also
      search the web to confirm and complete the track list. What it reads is
      then used to search the databases too, and you can use either result.
+   - **Ask an AI chat.** No API key needed. *Create instructions* writes a
+     prompt describing the album (track count, exact track lengths, current
+     tags) and the exact JSON format to reply with. Copy it into a new
+     claude.ai chat with web search on (attach cover photos if you like),
+     paste the reply back into the app, and press *Use this reply*.
 3. **Review and SAVE.** Edit any field and choose cover art (from the
    database or one of your photos). Then see below.
 

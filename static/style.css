@@ -174,3 +174,6 @@ button.save { min-width: 140px; letter-spacing: .04em; }
 .chip { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: var(--soft); color: var(--muted); }
 .chip.major { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
 .chip.ok { color: var(--ok); }
+
+.chat-box { width: 100%; min-height: 140px; font: 12px/1.45 Consolas, "MS Gothic", monospace; resize: vertical; margin: 6px 0; }
+#chatResult .notes { font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
